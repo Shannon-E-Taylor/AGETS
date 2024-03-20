@@ -19,6 +19,6 @@ Then activate with
 `conda activate AGET`
 
 
-This code represents the combined coding efforts of Shannon E. Taylor and Kay Spiess
+This code represents the combined coding efforts of Shannon Taylor and Kay Spiess
 
 
