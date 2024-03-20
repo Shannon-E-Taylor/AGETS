@@ -2,7 +2,7 @@
 
 This github repository contains code associated with Spiess, Taylor et al. 2022: Approximated Gene Expression Trajectories (AGETs) for Gene Regulatory Network Inference on Cell Tracks.  (TODO add DOI when paper is published).
 
-The documents are split into three chunks:
+The documents are split into three folders:
 
 1) Construct the AGETs - see `01_AGET_construction`
 
