@@ -1,15 +1,19 @@
-# Approximated Gene Expression Trajectories (AGETs) for Gene Regulatory Network Inference on Cell Tracks 
+# Approximated Gene Expression Trajectories (AGETs) for Gene Regulatory Network Inference on Cell Tracks
 
-This github repository contains code associated with Spiess, Taylor et al. 2022: Approximated Gene Expression Trajectories (AGETs) for Gene Regulatory Network Inference on Cell Tracks.  (TODO add DOI when paper is published). 
+This github repository contains code associated with Spiess, Taylor et al. 2022: Approximated Gene Expression Trajectories (AGETs) for Gene Regulatory Network Inference on Cell Tracks.  (TODO add DOI when paper is published).
 
-Creating Approximated Gene Expression Trajectories (AGETs).ipynb : 
-This is the file that created the AGETs we used for the manuscript. 
+The documents are split into three chunks:
 
-MCMC with AGETs.ipynb 
-This file describes the process for MCMC in our formulation. Note that this code is NOT speed-optimized. 
+1) Construct the AGETs - see `01_AGET_construction`
 
-run_mcmc_fast.py 
-This file is the set of scripts that we used for MCMC. It is optimized as far as I could for speed and as such is ~50x faster than the jupyter notebook. 
+2) Reverse engineer the GRNs using these agets: see `02_Reverse_engineering_GRNs_from_AGETs`.
 
-signalling_perturbations.py 
-For reproducibility, this is how Figure 5 of the manuscript was generated. 
+3) Finally, we want to validate and investigate our parameter sets: code for this is in `03_Investigations_using_MAP_network`.
+
+You will need the AGET conda environment
+
+`conda create -n AGET --python=3.6 --file environment.yml`
+
+Then activate with
+
+`conda activate AGET`
