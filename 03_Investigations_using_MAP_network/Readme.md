@@ -1,5 +1,7 @@
 # Network analysis
 
+These scripts are provided for reproducibility of the manuscript and as examples; we do not expect that they will generalize to other systems. Please see the manuscript for details on the analysis provided here. 
+
 After running our MCMC, we can analyse our parameter sets. These are provided in the `param_sets` folder.
 
 We can further analyse this parameter set: `01_MAP_network_analysis.ipynb` provides code to reprouduce panels in Figure 3 of the manuscript.
