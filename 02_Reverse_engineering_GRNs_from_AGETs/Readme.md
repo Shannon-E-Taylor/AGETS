@@ -4,9 +4,21 @@ This folder contains the AGETs and script required to reverse-engineer GRNs.
 
 We have two files that will both run the MCMC:
 
-`MCMC with AGETs.ipynb` describes how the code works and provies a minimal example. This code is better documented and more readable.
+`MCMC with AGETs.ipynb` describes how the code works and provies a minimal example. This code is more readable.
 
-`run_mcmc_fast.py` has been heavily optimized for speed and uses the numba and numbalsoda libraries to solve the ODEs. I do not believe that further speed optimization is possible in python: if you are wanting to try this method it would be worth considering implementing the code in julia or a similar faster language. This code should be run from the terminal with MCMC parameters as arguments, in the following order:
+`run_mcmc_fast.py` has been heavily optimized for speed and uses the numba and numbalsoda libraries to solve the ODEs. I do not believe that further speed optimization is possible in python: if you are wanting to try this method it would be worth considering implementing the code in julia or a similar faster language. 
+
+The code, overall, will: 
+
+1) pre-process and package the AGETs generated in part (1) so that they can run efficiently.
+
+2) Define and precompile the ODEs required for simulation for efficient computation.  
+
+3) Defines the parameters required for MCMC- specifically the priors, initial guesses, and likelhood function.
+
+4) Finally, MCMC is run using the emcee package and the data is saved.  
+
+This code should be run from the terminal with MCMC parameters as arguments, in the following order:
 
 1) number of walkers (eg 100). The `emcee` docs recommend no less than twice the number of cores on your machine, for maximum efficiency, and then as many as you can bear. Experimenting with this number will impact the efficiency of the MCMC but in my experience does not change the sorts of parameters you will get out. More walkers is better but will ~linearly increase the iteration time for MCMC.
 
