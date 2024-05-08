@@ -1,17 +1,6 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# # MCMC Inference with AGETs
-#
-# This code shows how to use the AGETs inferred in the Notebook *Creating Approximated Gene Expression Trajectories (AGETs)* in an MCMC approach to infer GRN parameters. The AGETs contain a target gene expression for the Tbox genes that can be fit to. It also contains initial conditions (Tbox expression at the start) and boundary conditions (Wnt and FGF expression over time). For the inference, we only use a subset of all 1903 AGETs because of computation time. Only AGETs that are observed from start to end of the movie are used (longest AGETs), to minimize the influence of the initial conditions on the whole simulated expression. A randomly chosen subset of these longest AGETs are saved in the file *List_of_100_cell_tracks.txt*. For the following inference, 10 of these AGETs where chosen semi-randomly, meaning that they where chosen to approximately represent the whole region of interest in the PSM. Practically that meant, that the first 10 AGETs did not fulfill that criterion by visual inspection and the second 10 AGETs did. Therefore, AGETs 10-19 were used. In the code, Tbxta is referred to as g1, Tbx16 is referred to as g2 and Tbx24 is referred to as g3.
-
-# ## Define simulator
-#
-# In the following, a simulator class *Simulate_on_tracks* is defined. As indicated by the file name, tracks and AGETs are used interchangeably in the code. As explained in the paper, the simulator takes as input a set of 24 parameters describing the GRN and use ODEs with the initial and boundary conditions from the AGETs to simulate gene expression for the chosen 10 AGETs. The simulator class is then used in the following MCMC inference.
-
-# In[1]:
-
-
 import numpy as np
 from numpy.random import default_rng
 import pandas as pd
@@ -27,47 +16,52 @@ import emcee
 import math
 import sys
 
+# info for jit 
+fastmath = TRUE
+
 
 ##########
 # INPUTS #
 ##########
 
-nwalkers = int(sys.argv[1])
+# read the number of walkers to run with emcee. 
+# increasing the number of walkers can speed up convergence but will slow down the computation 
+nwalkers = int(sys.argv[1]) 
 
+# read the number of timesteps (samples) to run emcee for 
+# In our system, we needed 10000 samples, but this can vary 
 Nsamples = int(sys.argv[2])
 
+# seed for AGET choice  
 random_num = int(sys.argv[3])
 
+# the number of AGETs to use for reverse engineering 
+# recommend about 10% for start 
 n_agets = int(sys.argv[4])
 
+# Increment this so repeated runs don't overwrite previous ones!! 
 techrep = int(sys.argv[5])
 
 print('Parameters are: ')
 print('nwalkers: ' + str(nwalkers))
 print('Nsamples: ' + str(Nsamples))
 
+# name the run based on the paramters above. 
 i_run = f'{n_agets}_AGETs.{random_num}_randomnumber.{Nsamples}_it.{nwalkers}_walkers.{techrep}_technicalreplicate'
 
 print('i_run: ' + str(i_run))
 
+###
+# Choose AGETs to fit to 
 with open("Input/List_of_all_cell_tracks_starttoend.txt", "rb") as fp:
     list_of_cell_tracks = pickle.load(fp) # Load the chosen AGETs#
 
-
-# filter the tracks to fit to
-# tracks = [df['TrackID'][0].astype(str) for df in list_of_cell_tracks if df['g3'].loc[0] < df['g3'].loc[df.shape[0]-1] or df['X'].loc[0] < 100]
-# tracks = [df['TrackID'][0].astype(str) for df in list_of_cell_tracks if df['X'].loc[0] < 200]
-
-
+# we remove anterior tracks 
 keep_tracks = [track for track in list_of_cell_tracks if track['X'].values[-1] < 170]
 
-print(len(keep_tracks), len(keep_tracks) * 0.9)
-
-
+# initialize the random seed, and choose data 
 rng = default_rng(random_num)
 list_of_cell_tracks=rng.choice(keep_tracks, n_agets, replace = False)
-
-fastmath = True
 
 
 
@@ -78,12 +72,14 @@ fastmath = True
 # these are the functions to run PSH etc
 # they are compiled with jit so that they are fast
 
+# code to run the matrix dot product very quickly 
 @njit()
 def dot(x, y):
     s = 0
     for i in range(len(x)):
         s += x[i]*y[i]
     return s
+
 
 @njit()
 def g(x):
@@ -133,59 +129,51 @@ def solve_lsoda(s, t_interval, params):
     if success:
         return usol
     else:
-        return usol * 0 # so it's very very bad
+        return usol * 0 
 
 print('defined solver')
 
-fastmath = True
-
-
 def precompute_df(tracks_df):
+    '''
+    This function takes the AGETs identified above, and pre-processes them such that we can run 
+    the ODEs with different parameter values quickly on them. 
+    '''
     precomputed_information = []
 
     for df_celltrack in tracks_df:
         df_celltrack = df_celltrack.reset_index(drop = True)
-        # get signalling
-        B1 = df_celltrack['Wnt'].values
-        B2 = df_celltrack['FGF'].values
 
         # get ICs
         s0 = df_celltrack.loc[0, ['g1', 'g2', 'g3']].values
 
-        df_celltrack.Time_nPSM = df_celltrack.Time*90/3600/3 # Add biological time, used later
-
-        # get values to fit to
-        g1 = df_celltrack['g1'].values
-        g2 = df_celltrack['g2'].values
-        g3 = df_celltrack['g3'].values
-
+        # extract the gene expression values from the dataframe 
         gene_expression = df_celltrack.loc[:, ['g1', 'g2', 'g3']].values
 
+        # extract the signalling values 
+        B1 = df_celltrack['Wnt'].values
+        B2 = df_celltrack['FGF'].values
+
+        # Convert microscopy frame number to biological time
+        df_celltrack.Time_nPSM = df_celltrack.Time*90/3600/3 
+
         # loop through dataframe to get time intervals for simulation
+        # we simulate the ODE on 10 timepoints between each microscopy frame 
+        # each microscopy frame differs by ~0.05AU so we have sufficient temporal resolution 
         t_eval = []
         for index in df_celltrack.index[:-1]:
-            count_timesteps_between = df_celltrack.Time[index+1] - df_celltrack.Time[index] # number of time steps between observations, sometimes an observation at a specific time is missing
-            # t_eval.append(int(count_timesteps_between)*10)
             t_eval.append(
                 np.array(np.linspace(
                     df_celltrack.Time_nPSM[index], df_celltrack.Time_nPSM[index+1], 10)
             ))
-        # print(t_eval[0])
 
-        # append the information
+        # package the information together 
         precomputed_information.append(
             np.array(
                 [np.array(B1),
                 np.array(B2),
                 np.array(s0),
                 np.array(t_eval),
-                # np.array(df_celltrack.Time_nPSM.values)[:-1],
-                # np.array(df_celltrack.Time_nPSM.values)[1:],
-                # np.array(t_eval),
                 gene_expression
-                # np.array(g1)[:-1],
-                # np.array(g2)[:-1],
-                # np.array(g3)[:-1]
                 ],dtype='object'
                 )
         )
@@ -206,6 +194,8 @@ def simulate_single_track(B1, B2, t_eval, s0, params):
     params: parameter values
     '''
 
+    # define a data object to hold our simulated data #
+    # it's faster to do this now, than append to a numpy array later 
     simulated_expression = np.empty((B1.shape[0], 3), dtype='float64')
     simulated_expression[0] = s0
 
@@ -238,16 +228,21 @@ def calculate_logl(params, list_of_tracks):
         simulated_expression = simulate_single_track(B1, B2, t_eval, s0, params)
         all_simulated_expression.append(simulated_expression)
         real_expression.append(geneexp)
+
+    # now that we have run the simulation on all cell tracks, 
+    # we can concatenate the data together 
     all_simulated_expression = np.concatenate(all_simulated_expression)
     real_expression = np.concatenate(real_expression)
 
-    ll1 = -0.5 * np.sum(((all_simulated_expression[:, 0] - real_expression[:, 0])/0.2)**2) # SD=0.2 found by testing different SDs and looking what works best
-    ll2 = -0.5 * np.sum(((all_simulated_expression[:, 1] - real_expression[:, 1])/0.2)**2) # SD=0.2 found by testing different SDs and looking what works best
-    ll3 = -0.5 * np.sum(((all_simulated_expression[:, 2] - real_expression[:, 2])/0.2)**2) # SD=0.1 found by testing different SDs and looking what works best
+    # now we compute the likelihood 
+    # note the sd value differs for each gene 
+    ll1 = -0.5 * np.sum(((all_simulated_expression[:, 0] - real_expression[:, 0])/0.2)**2)
+    ll2 = -0.5 * np.sum(((all_simulated_expression[:, 1] - real_expression[:, 1])/0.2)**2) 
+    ll3 = -0.5 * np.sum(((all_simulated_expression[:, 2] - real_expression[:, 2])/0.1)**2) 
     return ll1 + ll2 + ll3
 
 
-# wrapper function
+# wrapper function 
 def loglikelihood(theta):
     ll = calculate_logl(theta, precomputed_data)
     if not ll or math.isnan(ll):
@@ -282,7 +277,7 @@ positive_prior_idx = [
     0, 4, 8, 9, 10, 11, 12, 13, 14, 18
 ]
 
-
+# now we ensure that all positive priors are indeed positive 
 prior_min = [i * -1 for i in prior_max]
 for val in positive_prior_idx:
     prior_min[val] = 0
@@ -290,17 +285,19 @@ for val in positive_prior_idx:
 
 def logprior(theta): # prior was chosen based on biological intuition for the parameters
     #  check if any of our priors are outside the allowed values
-    # if they are return NOPE
-    # otherwise calculate the weak gaussian prior
-    # note that sigma is divided by two to give ~very low~ values outside the uniform prior
+    # if they are return negative infinity 
+    # which is a hack to make inappropriate priors return ridiculously poor scores 
     if all([theta[i] < prior_max[i] and theta[i] > prior_min[i] for i in range(24)]):
         lp = 0
     else:
         lp = -np.inf
     return lp
 
-# This time we initialize with a tight normal distribution around 0
 
+
+# now we set initial conditions
+# with a normal distribution around zero 
+# we take the absolute value for positive priors 
 p0 = []
 
 for i in range(24):
@@ -317,9 +314,6 @@ ncpu = cpu_count() # finde number of available CPUs for parallel processing
 print("{0} CPUs".format(ncpu))
 
 
-# setup a backend for qc
-
-
 # Run MCMC (this takes time)
 with Pool(ncpu) as pool:
     sampler = emcee.EnsembleSampler(nwalkers, ndim, logposterior, pool=pool)
@@ -330,7 +324,7 @@ with Pool(ncpu) as pool:
     print("Multiprocessing took {0:.1f} seconds".format(multi_time))
 
 
-  # Save samples
+# Save samples
 samples = sampler.get_chain(flat=True)
 print('samples')
 print(samples.shape)
